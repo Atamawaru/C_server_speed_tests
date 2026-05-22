@@ -2,8 +2,14 @@
 #include <curl/curl.h>
 #include <cjson/cJSON.h>
 
+#include <curl/easy.h>
+#include <curl/system.h>
 #include <stdio.h>
 #include <stdlib.h>
+#include <string.h>
+
+size_t dummy_write(void *buffer, size_t size, size_t nmemb, void *userp);
+
 int main(int argc, char *argv[]){
     
     char *file_buffer;
@@ -49,10 +55,33 @@ int main(int argc, char *argv[]){
     }
     //cJSON_Delete(root);
     free(file_buffer);
-    return 0;
+    int result;
     CURL *curl;
     curl = curl_easy_init();
-    printf("Hello world!\n");
+    for (int i=0; i<num_of_objects; i++) {
+        curl_easy_setopt(curl, CURLOPT_URL, strcat(cJSON_GetArrayItem(hosts_arr, i)->valuestring, "/random2000x2000.jpg"));
+        printf("Testing server: %s\n", cJSON_GetArrayItem(hosts_arr, i)->valuestring);
+        curl_easy_setopt(curl, CURLOPT_WRITEFUNCTION, dummy_write);
+        curl_easy_setopt(curl, CURLOPT_TIMEOUT, 15L);
+        curl_easy_setopt(curl, CURLOPT_USERAGENT, "C server speed test");
+        result = curl_easy_perform(curl);
+        if (result != CURLE_OK) {
+            fprintf(stderr, "Error: %s\n", curl_easy_strerror(result));
+        }
+        else {
+            curl_off_t download_speed;
+            result = curl_easy_getinfo(curl, CURLINFO_SPEED_DOWNLOAD_T, &download_speed);
+            if (result == CURLE_OK) {
+                fprintf(stdout, "Download speed: %d\n\n", (int)download_speed);
+            }
+        }
+
+    }
+
     curl_easy_cleanup(curl);
     return 0;
+}
+size_t dummy_write(void *buffer, size_t size, size_t nmemb, void *userp)
+{
+   return size * nmemb;
 }
