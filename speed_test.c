@@ -1,4 +1,5 @@
 
+#include <ctype.h>
 #include <curl/curl.h>
 #include <cjson/cJSON.h>
 #include <getopt.h>
@@ -9,6 +10,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <stdbool.h>
 
 size_t dummy_write(void *buffer, size_t size, size_t nmemb, void *userp);
 
@@ -50,25 +52,65 @@ int main(int argc, char *argv[]){
     int num_of_objects = cJSON_GetArraySize(root);
     // get and check options
     int opt;
-    while ((opt = getopt(argc, argv, ":u:d:h")) != -1) {
+    char* only_upload_host = "";
+    char* only_download_host = "";
+    bool only_upload = false;
+    bool only_download = false;
+    bool get_best_server = false;
+    bool get_user_location = false;
+    bool all_automated = false;
+    if (argc <= 1) {
+        print_help();
+        return -1;
+    }
+    while ((opt = getopt(argc, argv, ":u:d:hlba")) != -1) {
         switch (opt) {
             case 'h':
                 print_help();
                 return 0;
                 break;
             case 'u':
-                printf("upload\n");
+                if (strlen(optarg) > 0) {
+                    only_upload = true;
+                    only_upload_host = malloc(strlen(optarg));
+                    memcpy(only_upload_host, optarg, strlen(optarg));
+                }
                 break;
             case 'd':
-                printf("download\n");
+                if (strlen(optarg) > 0) {
+                    only_download = true;
+                    only_download_host = malloc(strlen(optarg));
+                    memcpy(only_download_host, optarg, strlen(optarg));
+                }
                 break;
+            case 'l':
+                get_user_location = true;
+                break;
+            case 'b':
+                get_best_server = true;
+                break;
+            case 'a':
+                all_automated = true;
             case ':':
                 printf("Error. Argument needed for -%c option.\n", optopt);
+                if (strlen(only_upload_host) != 0) {
+                    free(only_upload_host);
+                }
+                if (strlen(only_download_host) != 0) {
+                    free(only_download_host);
+                }
+
                 print_help();
                 return -1;
                 break;
             case '?':
-                printf("Unknown argument\n");
+                printf("Error. Unknown -%c argument.\n", optopt);
+                if (strlen(only_upload_host) != 0) {
+                    free(only_upload_host);
+                }
+                if (strlen(only_download_host) != 0) {
+                    free(only_download_host);
+                }
                 print_help();
                 return -1;
                 break;
@@ -77,6 +119,28 @@ int main(int argc, char *argv[]){
                 return 0;
                 break;
         }
+    }
+
+    if (all_automated == true) {
+    
+    }
+    else if (only_upload == true) {
+    
+    }
+    else if (only_download == true) {
+    
+    }
+    else if (get_best_server == true) {
+    
+    }
+    else if (get_user_location == true) {
+    
+    }
+    if (strlen(only_upload_host) != 0) {
+        free(only_upload_host);
+    }
+    if (strlen(only_download_host) != 0) {
+        free(only_download_host);
     }
     return 0;
     for (int i=0; i<num_of_objects; i++) {
