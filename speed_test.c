@@ -34,7 +34,6 @@ int main(int argc, char *argv[]){
     }
     cJSON *root = cJSON_Parse(file_buffer);
     cJSON *server;
-    cJSON *host;
     if (root == NULL) {
         const char *error_ptr = cJSON_GetErrorPtr();
         if (error_ptr != NULL) {
@@ -44,38 +43,35 @@ int main(int argc, char *argv[]){
         return -2;
     }
     int num_of_objects = cJSON_GetArraySize(root);
-    cJSON *hosts_arr = cJSON_CreateArray();
     for (int i=0; i<num_of_objects; i++) {
         server = cJSON_GetArrayItem(root, i);
-        host = cJSON_GetObjectItem(server, "host");
-        cJSON_AddItemToArray(hosts_arr, host);
+        cJSON_AddItemToObject(server, "download_speed", cJSON_CreateNumber(0));
+        cJSON_AddItemToObject(server, "upload_speed", cJSON_CreateNumber(0));
+        cJSON_AddItemToObject(server, "temp_host_name", cJSON_CreateString(cJSON_GetObjectItem(server, "host")->valuestring));
     }
-    for (int i=0; i<num_of_objects; i++) {
-        printf("Server %d url: %s\n", i, cJSON_GetArrayItem(hosts_arr, i)->valuestring);
-    }
-    //cJSON_Delete(root);
     free(file_buffer);
     int result;
     CURL *curl;
     curl = curl_easy_init();
     for (int i=0; i<num_of_objects; i++) {
-        curl_easy_setopt(curl, CURLOPT_URL, strcat(cJSON_GetArrayItem(hosts_arr, i)->valuestring, "/random2000x2000.jpg"));
-        printf("Testing server: %s\n", cJSON_GetArrayItem(hosts_arr, i)->valuestring);
+        server = cJSON_GetArrayItem(root, i);
+        printf("Testing [%04d/%d]: %50s",i, num_of_objects, cJSON_GetObjectItem(server, "host")->valuestring);
+        curl_easy_setopt(curl, CURLOPT_URL, strcat(cJSON_GetObjectItem(server, "temp_host_name")->valuestring, "/random2000x2000.jpg"));
         curl_easy_setopt(curl, CURLOPT_WRITEFUNCTION, dummy_write);
         curl_easy_setopt(curl, CURLOPT_TIMEOUT, 15L);
         curl_easy_setopt(curl, CURLOPT_USERAGENT, "C server speed test");
         result = curl_easy_perform(curl);
         if (result != CURLE_OK) {
-            fprintf(stderr, "Error: %s\n", curl_easy_strerror(result));
+            printf("%s (%s)\n", "...ERROR.", curl_easy_strerror(result));
         }
         else {
             curl_off_t download_speed;
+            printf("%s\n", "...OK");
             result = curl_easy_getinfo(curl, CURLINFO_SPEED_DOWNLOAD_T, &download_speed);
             if (result == CURLE_OK) {
-                fprintf(stdout, "Download speed: %d\n\n", (int)download_speed);
+                cJSON_AddNumberToObject(server, "download_speed", download_speed);
             }
         }
-
     }
 
     curl_easy_cleanup(curl);
