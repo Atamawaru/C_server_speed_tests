@@ -1,6 +1,8 @@
 
 #include <curl/curl.h>
 #include <cjson/cJSON.h>
+#include <getopt.h>
+#include <bits/getopt_core.h>
 
 #include <curl/easy.h>
 #include <curl/system.h>
@@ -9,6 +11,8 @@
 #include <string.h>
 
 size_t dummy_write(void *buffer, size_t size, size_t nmemb, void *userp);
+
+void print_help();
 
 int main(int argc, char *argv[]){
     
@@ -42,14 +46,45 @@ int main(int argc, char *argv[]){
         //cJSON_Delete(root);
         return -2;
     }
+    free(file_buffer);
     int num_of_objects = cJSON_GetArraySize(root);
+    // get and check options
+    int opt;
+    while ((opt = getopt(argc, argv, ":u:d:h")) != -1) {
+        switch (opt) {
+            case 'h':
+                print_help();
+                return 0;
+                break;
+            case 'u':
+                printf("upload\n");
+                break;
+            case 'd':
+                printf("download\n");
+                break;
+            case ':':
+                printf("Error. Argument needed for -%c option.\n", optopt);
+                print_help();
+                return -1;
+                break;
+            case '?':
+                printf("Unknown argument\n");
+                print_help();
+                return -1;
+                break;
+            default:
+                print_help();
+                return 0;
+                break;
+        }
+    }
+    return 0;
     for (int i=0; i<num_of_objects; i++) {
         server = cJSON_GetArrayItem(root, i);
         cJSON_AddItemToObject(server, "download_speed", cJSON_CreateNumber(0));
         cJSON_AddItemToObject(server, "upload_speed", cJSON_CreateNumber(0));
         cJSON_AddItemToObject(server, "temp_host_name", cJSON_CreateString(cJSON_GetObjectItem(server, "host")->valuestring));
     }
-    free(file_buffer);
     int result;
     CURL *curl;
     curl = curl_easy_init();
@@ -87,4 +122,16 @@ int main(int argc, char *argv[]){
 size_t dummy_write(void *buffer, size_t size, size_t nmemb, void *userp)
 {
    return size * nmemb;
+}
+
+void print_help(){
+    printf("Usage: ./speed_test [OPTIONS]\n");
+    printf("Options:\n");
+    printf("\t-d <host>\tDo a download speed test for inputted host\n");
+    printf("\t-u <host>\tDo an upload speed test for inputted host\n");
+    printf("\t-b\t\tGet the best server by location\n");
+    printf("\t-l\t\tFind the user location\n");
+    printf("\t-a\t\tDo the full automated test\n");
+    printf("\t-h\t\tPrint this help message\n");
+
 }
