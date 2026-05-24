@@ -1,5 +1,4 @@
 
-#include <ctype.h>
 #include <curl/curl.h>
 #include <cjson/cJSON.h>
 #include <getopt.h>
@@ -7,14 +6,26 @@
 
 #include <curl/easy.h>
 #include <curl/system.h>
+#include <stddef.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 #include <stdbool.h>
 
+#define IP_GEO_API "http://ip-api.com/json/"
+
+typedef struct{
+    char *string;
+    size_t size;
+}Response;
+
 size_t dummy_write(void *buffer, size_t size, size_t nmemb, void *userp);
 
+size_t write_chunk(void *buffer, size_t size, size_t nmemb, void *userp);
+
 void print_help();
+
+Response get_geo_response(CURL *curl, Response *response);
 
 int main(int argc, char *argv[]){
     
@@ -45,12 +56,11 @@ int main(int argc, char *argv[]){
         if (error_ptr != NULL) {
             printf("Error parsing JSON file: %s\n", error_ptr);
         }
-        //cJSON_Delete(root);
         return -2;
     }
     free(file_buffer);
     int num_of_objects = cJSON_GetArraySize(root);
-    // get and check options
+
     int opt;
     char* only_upload_host = "";
     char* only_download_host = "";
@@ -142,6 +152,7 @@ int main(int argc, char *argv[]){
     if (strlen(only_download_host) != 0) {
         free(only_download_host);
     }
+
     return 0;
     for (int i=0; i<num_of_objects; i++) {
         server = cJSON_GetArrayItem(root, i);
@@ -183,9 +194,39 @@ int main(int argc, char *argv[]){
     curl_easy_cleanup(curl);
     return 0;
 }
-size_t dummy_write(void *buffer, size_t size, size_t nmemb, void *userp)
-{
+size_t dummy_write(void *buffer, size_t size, size_t nmemb, void *userp){
    return size * nmemb;
+}
+
+size_t write_chunk(void *buffer, size_t size, size_t nmemb, void *userp){
+    
+    size_t real_size = size * nmemb;
+    Response *response = (Response *) userp;
+    char *ptr = realloc(response->string, response->size + real_size + 1);
+    if (ptr == NULL) {
+        return 0;
+    }
+    response->string = ptr;
+    memcpy(&(response->string[response->size]), buffer, real_size);
+    response->size += real_size;
+    response->string[response->size] = '\0';
+    return real_size;
+}
+
+Response get_geo_response(CURL *curl, Response *response){
+    CURLcode result;
+
+    curl_easy_setopt(curl, CURLOPT_URL, IP_GEO_API);
+    curl_easy_setopt(curl, CURLOPT_WRITEFUNCTION, write_chunk);
+    curl_easy_setopt(curl, CURLOPT_WRITEDATA, (void *) response);
+
+    result = curl_easy_perform(curl);
+    if (result != CURLE_OK) {
+        printf("Error getting user location: %s\n", curl_easy_strerror(result));
+        *response->string=' ';
+        return *response;
+    }
+    return *response;
 }
 
 void print_help(){
