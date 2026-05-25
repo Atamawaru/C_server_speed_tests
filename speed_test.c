@@ -31,6 +31,8 @@ void check_servers_by_location(char *country_name, char *country_code, cJSON **a
 
 void check_servers_latency(CURL *curl, float *best_latency, cJSON *by_location_servers, char **best_server_name);
 
+curl_off_t get_download_speed_from_server(CURL *curl, char *server_name);
+
 int main(int argc, char *argv[]){
     
     char *file_buffer;
@@ -202,7 +204,30 @@ int main(int argc, char *argv[]){
     
     }
     if (only_download == true && !all_automated) {
-    
+        bool isExist = false;
+        curl_off_t download_speed;
+        printf("Checking if host name exists in list...");
+        for (int i=0; i<num_of_objects; i++) {
+            server = cJSON_GetArrayItem(root, i);
+            if (strcmp(only_download_host, cJSON_GetObjectItem(server, "host")->valuestring) == 0) {
+                isExist = true;
+                break;
+            }
+        }
+        if (isExist == true) {
+            printf(" OK\n");
+            download_speed = get_download_speed_from_server(curl, only_download_host);
+            if (download_speed != -1) {
+                printf("RESULTS\n----------\nDownload speed: %f Mb/s\n ", (download_speed * 8.0) / 1000000.0); 
+            }
+            else {
+                printf("RESULTS\n----------\nFailed to get download speed of host name. Unable to continue.\n");    
+            }
+        }
+        else {
+            printf(" ERROR. (Host name does not exist in list)\n");
+            printf("RESULTS\n----------\nFailed to find host name in list. Unable to continue.\n");
+        }
     }
     
     if (strlen(only_upload_host) != 0) {
@@ -321,6 +346,30 @@ void check_servers_latency(CURL *curl, float *best_latency, cJSON *by_location_s
     }
 }
 
+curl_off_t get_download_speed_from_server(CURL *curl, char *server_name){
+    int result;
+    curl_off_t speed;
+    char *temp_name = malloc(strlen(server_name)+strlen("/random4000x4000.jpg")+1); 
+    strcpy(temp_name, server_name);
+    curl_easy_setopt(curl, CURLOPT_URL, strcat(temp_name, "/random4000x4000.jpg"));
+    curl_easy_setopt(curl, CURLOPT_WRITEFUNCTION, dummy_write);
+    curl_easy_setopt(curl, CURLOPT_TIMEOUT, 15L);
+    curl_easy_setopt(curl, CURLOPT_USERAGENT, "C server speed test");
+    printf("Checking download speed of host name");
+    result = curl_easy_perform(curl);
+    if (result != CURLE_OK) {
+        printf("%s (%s)\n", "... ERROR.", curl_easy_strerror(result));
+        speed = -1;
+        return speed;
+    }
+    else {
+        result = curl_easy_getinfo(curl, CURLINFO_SPEED_DOWNLOAD_T, &speed);
+        if (result == CURLE_OK) {
+            printf("%s\n", "... OK");
+        } 
+    }
+    return speed;
+}
 void print_help(){
     printf("Usage: ./speed_test [OPTIONS]\n");
     printf("Options:\n");
