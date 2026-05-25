@@ -177,8 +177,8 @@ int main(int argc, char *argv[]){
                     curl_off_t upload_speed = 5;
                     curl_easy_reset(curl);
                     download_speed = get_download_speed_from_server(curl, best_server_name);
-                    //upload_speed = get_upload_speed_from_server(best_server_name, curl);
-                    if (download_speed < 0) {
+                    upload_speed = get_upload_speed_from_server(best_server_name, curl);
+                    if (download_speed < 0 || upload_speed < 0) {
                         printf("RESULTS\n----------\nFailed to get download/upload speeds. Unable to continue.\n");     
                     }
                     else {
