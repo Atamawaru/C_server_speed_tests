@@ -13,11 +13,16 @@
 #include <stdbool.h>
 
 #define IP_GEO_API "http://ip-api.com/json/"
-
+#define UPLOAD_SIZE (20 * 1024 * 1024)
 typedef struct{
     char *string;
     size_t size;
 }Response;
+
+typedef struct{
+    size_t size;
+    size_t bytes_sent;
+}UploadDummy;
 
 size_t dummy_write(void *buffer, size_t size, size_t nmemb, void *userp);
 
@@ -32,6 +37,8 @@ void check_servers_by_location(char *country_name, char *country_code, cJSON **a
 void check_servers_latency(CURL *curl, float *best_latency, cJSON *by_location_servers, char **best_server_name);
 
 curl_off_t get_download_speed_from_server(CURL *curl, char *server_name);
+
+curl_off_t get_upload_speed_from_server(char *server_name, CURL *curl);
 
 int main(int argc, char *argv[]){
     
@@ -201,7 +208,30 @@ int main(int argc, char *argv[]){
         }
     }
     if (only_upload == true && !all_automated) {
-    
+        bool isExist = false;
+        curl_off_t upload_speed;
+        printf("Checking if host name exists in list...");
+        for (int i=0; i<num_of_objects; i++) {
+            server = cJSON_GetArrayItem(root, i);
+            if (strcmp(only_upload_host, cJSON_GetObjectItem(server, "host")->valuestring) == 0) {
+                isExist = true;
+                break;
+            }
+        }
+        if (isExist == true) {
+            printf(" OK\n");
+            upload_speed = get_upload_speed_from_server(only_upload_host, curl);
+            if (upload_speed != -1) {
+                printf("RESULTS\n----------\nUpload speed: %f Mb/s\n ", (upload_speed * 8.0) / 1000000.0); 
+            }
+            else {
+                printf("RESULTS\n----------\nFailed to get upload speed of host name. Unable to continue.\n");    
+            }
+        }
+        else {
+            printf(" ERROR. (Host name does not exist in list)\n");
+            printf("RESULTS\n----------\nFailed to find host name in list. Unable to continue.\n");
+        } 
     }
     if (only_download == true && !all_automated) {
         bool isExist = false;
@@ -238,43 +268,32 @@ int main(int argc, char *argv[]){
     }
     free(response.string);
     curl_easy_cleanup(curl);
-    return 0;
-    int result;
-    for (int i=0; i<num_of_objects; i++) {
-        server = cJSON_GetArrayItem(root, i);
-        printf("Testing [%04d/%d]: %50s",i+1, num_of_objects+1, cJSON_GetObjectItem(server, "host")->valuestring);
-        //curl_easy_setopt(curl, CURLOPT_URL, strcat(cJSON_GetObjectItem(server, "temp_host_name")->valuestring, "/random10x10.jpg"));
-        curl_easy_setopt(curl, CURLOPT_URL, cJSON_GetObjectItem(server, "host")->valuestring);
-        curl_easy_setopt(curl, CURLOPT_WRITEFUNCTION, dummy_write);
-        curl_easy_setopt(curl, CURLOPT_TIMEOUT, 15L);
-        curl_easy_setopt(curl, CURLOPT_NOBODY, 1L);
-        curl_easy_setopt(curl, CURLOPT_USERAGENT, "C server speed test");
-        result = curl_easy_perform(curl);
-        if (result != CURLE_OK) {
-            printf("%s (%s)\n", "...ERROR.", curl_easy_strerror(result));
-        }
-        else {
-            //curl_off_t download_speed;
-            double connect_speed;
-            printf("%s", "...OK");
-            //result = curl_easy_getinfo(curl, CURLINFO_SPEED_DOWNLOAD_T, &download_speed);
-            //if (result == CURLE_OK) {
-            //    cJSON_AddNumberToObject(server, "download_speed", download_speed);
-            //}
-            result = curl_easy_getinfo(curl, CURLINFO_CONNECT_TIME, &connect_speed);
-            if (result == CURLE_OK) {
-                printf(" (Connect time: %.10f)\n", connect_speed);
-            }
-        }
-    }
-    
-   
+
     return 0;
 }
 size_t dummy_write(void *buffer, size_t size, size_t nmemb, void *userp){
    return size * nmemb;
 }
 
+size_t dummy_read(void *buffer, size_t size, size_t nmemb, void *userp){
+    UploadDummy *state = (UploadDummy *)userp;
+    size_t buffer_size = size * nmemb;
+    size_t remaining = state->size - state->bytes_sent;
+
+    if (remaining == 0) {
+        return 0;
+    }
+    size_t to_send;
+    if (remaining < buffer_size) {
+        to_send = remaining;
+    }     
+    else {
+        to_send = buffer_size;
+    }
+    memset(buffer, 'D', to_send);
+    state->bytes_sent += to_send;
+    return to_send;
+}
 size_t write_chunk(void *buffer, size_t size, size_t nmemb, void *userp){
     
     size_t real_size = size * nmemb;
@@ -368,6 +387,42 @@ curl_off_t get_download_speed_from_server(CURL *curl, char *server_name){
             printf("%s\n", "... OK");
         } 
     }
+    free(temp_name);
+    return speed;
+}
+curl_off_t get_upload_speed_from_server(char *server_name, CURL *curl){
+    
+    int result;
+    curl_off_t speed;
+    UploadDummy dummy = {
+        .size = UPLOAD_SIZE,
+        .bytes_sent = 0
+    };
+    char *temp_name = malloc(strlen(server_name) + strlen("/upload") + 1);
+    strcpy(temp_name, server_name);
+    curl_easy_setopt(curl, CURLOPT_URL, strcat(temp_name, "/upload"));
+    curl_easy_setopt(curl, CURLOPT_UPLOAD, 1L);
+    curl_easy_setopt(curl, CURLOPT_READFUNCTION, dummy_read);
+    curl_easy_setopt(curl, CURLOPT_READDATA, &dummy);
+    curl_easy_setopt(curl, CURLOPT_INFILESIZE_LARGE, (curl_off_t)dummy.size);
+    curl_easy_setopt(curl, CURLOPT_WRITEFUNCTION, dummy_write);
+    curl_easy_setopt(curl, CURLOPT_TIMEOUT, 15L);
+    curl_easy_setopt(curl, CURLOPT_USERAGENT, "C server speed test");
+    
+    printf("Checking upload speed of host name");
+    result = curl_easy_perform(curl);
+
+    if (result != CURLE_OK) {
+        printf("%s (%s)\n", "... ERROR.", curl_easy_strerror(result));
+        speed = -1;
+        return speed;
+    } else {
+        result = curl_easy_getinfo(curl, CURLINFO_SPEED_UPLOAD_T, &speed);
+        if (result == CURLE_OK) {
+            printf("%s\n", "... OK");
+        }
+    }
+    free(temp_name);
     return speed;
 }
 void print_help(){
