@@ -11,9 +11,9 @@
 #include <stdlib.h>
 #include <string.h>
 #include <stdbool.h>
-
+#include <unistd.h>
 #define IP_GEO_API "http://ip-api.com/json/"
-#define UPLOAD_SIZE (20 * 1024 * 1024)
+#define UPLOAD_SIZE (70 * 1024 * 1024)
 typedef struct{
     char *string;
     size_t size;
@@ -114,6 +114,7 @@ int main(int argc, char *argv[]){
                 break;
             case 'a':
                 all_automated = true;
+                break;
             case ':':
                 printf("Error. Argument needed for -%c option.\n", optopt);
                 if (strlen(only_upload_host) != 0) {
@@ -152,6 +153,52 @@ int main(int argc, char *argv[]){
     curl = curl_easy_init();
 
     if (all_automated == true) {
+        printf("Getting user's geolocation...");
+        response = get_geo_response(curl, &response);
+        if (response.size != 0) {
+            printf(" OK.\n");
+            cJSON *country = cJSON_Parse(response.string);
+            char *country_name = cJSON_GetObjectItem(country, "country")->valuestring;
+            char *country_code = cJSON_GetObjectItem(country, "countryCode")->valuestring;
+            cJSON *by_location_servers = cJSON_CreateArray();
+            printf("Checking available servers by location...");
+            check_servers_by_location(country_name, country_code, &by_location_servers, root);
+            if (cJSON_GetArraySize(by_location_servers) != 0) {
+                printf(" OK\n");
+                for (int i = 0; i<cJSON_GetArraySize(by_location_servers); i++) {
+                    printf("%4d. %s\n", i+1, cJSON_GetArrayItem(by_location_servers, i)->valuestring);
+                }
+                float best_latency = 9999;
+                char *best_server_name = "";
+                printf("Checking for the best latency...\n");
+                check_servers_latency(curl, &best_latency, by_location_servers, &best_server_name);
+                if (best_latency != 9999) {
+                    curl_off_t download_speed;
+                    curl_off_t upload_speed = 5;
+                    curl_easy_reset(curl);
+                    download_speed = get_download_speed_from_server(curl, best_server_name);
+                    //upload_speed = get_upload_speed_from_server(best_server_name, curl);
+                    if (download_speed < 0) {
+                        printf("RESULTS\n----------\nFailed to get download/upload speeds. Unable to continue.\n");     
+                    }
+                    else {
+                        printf("RESULTS\n----------\nDownload speed: %f Mb/s\nUpload speed: %f Mb/s\nServer name for speed test: %s\nUser location: %s\n\n", ((download_speed * 8.0) / 1000000.0), ((upload_speed * 8.0) / 1000000.0), best_server_name, country_name); 
+                    }
+                }
+                else {
+                    printf("RESULTS\n----------\nFailed to get best server. Unable to continue.\n");     
+                }
+            }
+            else {
+                printf("RESULTS\n----------\nFailed to get available servers from geo location. Unable to continue.\n");        
+            }
+            cJSON_Delete(by_location_servers);
+            //cJSON_Delete(country);
+
+        }
+        else {
+            printf("RESULTS\n----------\nFailed to get user geo location. Unable to continue.\n");
+        }
     
     }
     if (get_user_location == true && !all_automated) {
@@ -312,6 +359,7 @@ size_t write_chunk(void *buffer, size_t size, size_t nmemb, void *userp){
 Response get_geo_response(CURL *curl, Response *response){
 
     CURLcode result;
+    curl_easy_reset(curl);
     curl_easy_setopt(curl, CURLOPT_URL, IP_GEO_API);
     curl_easy_setopt(curl, CURLOPT_WRITEFUNCTION, write_chunk);
     curl_easy_setopt(curl, CURLOPT_WRITEDATA, (void *) response);
@@ -368,6 +416,7 @@ void check_servers_latency(CURL *curl, float *best_latency, cJSON *by_location_s
 curl_off_t get_download_speed_from_server(CURL *curl, char *server_name){
     int result;
     curl_off_t speed;
+    curl_easy_reset(curl);
     char *temp_name = malloc(strlen(server_name)+strlen("/random4000x4000.jpg")+1); 
     strcpy(temp_name, server_name);
     curl_easy_setopt(curl, CURLOPT_URL, strcat(temp_name, "/random4000x4000.jpg"));
@@ -379,6 +428,7 @@ curl_off_t get_download_speed_from_server(CURL *curl, char *server_name){
     if (result != CURLE_OK) {
         printf("%s (%s)\n", "... ERROR.", curl_easy_strerror(result));
         speed = -1;
+        free(temp_name);
         return speed;
     }
     else {
@@ -393,6 +443,7 @@ curl_off_t get_download_speed_from_server(CURL *curl, char *server_name){
 curl_off_t get_upload_speed_from_server(char *server_name, CURL *curl){
     
     int result;
+    curl_easy_reset(curl);
     curl_off_t speed;
     UploadDummy dummy = {
         .size = UPLOAD_SIZE,
@@ -415,6 +466,7 @@ curl_off_t get_upload_speed_from_server(char *server_name, CURL *curl){
     if (result != CURLE_OK) {
         printf("%s (%s)\n", "... ERROR.", curl_easy_strerror(result));
         speed = -1;
+        free(temp_name);
         return speed;
     } else {
         result = curl_easy_getinfo(curl, CURLINFO_SPEED_UPLOAD_T, &speed);
