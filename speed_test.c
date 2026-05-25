@@ -131,38 +131,57 @@ int main(int argc, char *argv[]){
         }
     }
 
+    Response response;
+    response.string = malloc(1);
+    response.size = 0;
+    
+    CURL *curl;
+    curl = curl_easy_init();
+
     if (all_automated == true) {
     
     }
-    else if (only_upload == true) {
+    if (get_user_location == true) {
+        printf("Getting user's geolocation...");
+        response = get_geo_response(curl, &response);
+        if (response.size != 0) {
+            printf(" OK.\n");
+            cJSON *country = cJSON_Parse(response.string);
+            char *country_name = cJSON_GetObjectItem(country, "country")->valuestring;
+            char *country_code = cJSON_GetObjectItem(country, "countryCode")->valuestring;
+            printf("RESULTS\n----------\nCountry: %s (country code: %s)\n", country_name, country_code);
+            cJSON_Delete(country);
+        }
+        else {
+            printf("RESULTS\n----------\nFailed to get user geo location.\n");
+        }
+    }
+    if (only_upload == true) {
     
     }
-    else if (only_download == true) {
+    if (only_download == true) {
     
     }
-    else if (get_best_server == true) {
+    if (get_best_server == true) {
     
     }
-    else if (get_user_location == true) {
-    
-    }
+
     if (strlen(only_upload_host) != 0) {
         free(only_upload_host);
     }
     if (strlen(only_download_host) != 0) {
         free(only_download_host);
     }
-
+    free(response.string);
+    curl_easy_cleanup(curl);
     return 0;
+    int result;
     for (int i=0; i<num_of_objects; i++) {
         server = cJSON_GetArrayItem(root, i);
         cJSON_AddItemToObject(server, "download_speed", cJSON_CreateNumber(0));
         cJSON_AddItemToObject(server, "upload_speed", cJSON_CreateNumber(0));
         cJSON_AddItemToObject(server, "temp_host_name", cJSON_CreateString(cJSON_GetObjectItem(server, "host")->valuestring));
     }
-    int result;
-    CURL *curl;
-    curl = curl_easy_init();
     for (int i=0; i<num_of_objects; i++) {
         server = cJSON_GetArrayItem(root, i);
         printf("Testing [%04d/%d]: %50s",i+1, num_of_objects+1, cJSON_GetObjectItem(server, "host")->valuestring);
@@ -190,8 +209,8 @@ int main(int argc, char *argv[]){
             }
         }
     }
-
-    curl_easy_cleanup(curl);
+    
+   
     return 0;
 }
 size_t dummy_write(void *buffer, size_t size, size_t nmemb, void *userp){
@@ -214,15 +233,15 @@ size_t write_chunk(void *buffer, size_t size, size_t nmemb, void *userp){
 }
 
 Response get_geo_response(CURL *curl, Response *response){
-    CURLcode result;
 
+    CURLcode result;
     curl_easy_setopt(curl, CURLOPT_URL, IP_GEO_API);
     curl_easy_setopt(curl, CURLOPT_WRITEFUNCTION, write_chunk);
     curl_easy_setopt(curl, CURLOPT_WRITEDATA, (void *) response);
 
     result = curl_easy_perform(curl);
     if (result != CURLE_OK) {
-        printf("Error getting user location: %s\n", curl_easy_strerror(result));
+        printf(" ERROR. (%s)\n", curl_easy_strerror(result));
         *response->string=' ';
         return *response;
     }
