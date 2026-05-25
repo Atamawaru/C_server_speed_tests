@@ -27,6 +27,10 @@ void print_help();
 
 Response get_geo_response(CURL *curl, Response *response);
 
+void check_servers_by_location(char *country_name, char *country_code, cJSON **allowed_servers, cJSON *root);
+
+void check_servers_latency(CURL *curl, float *best_latency, cJSON *by_location_servers, char **best_server_name);
+
 int main(int argc, char *argv[]){
     
     char *file_buffer;
@@ -141,7 +145,7 @@ int main(int argc, char *argv[]){
     if (all_automated == true) {
     
     }
-    if (get_user_location == true) {
+    if (get_user_location == true && !all_automated) {
         printf("Getting user's geolocation...");
         response = get_geo_response(curl, &response);
         if (response.size != 0) {
@@ -156,16 +160,51 @@ int main(int argc, char *argv[]){
             printf("RESULTS\n----------\nFailed to get user geo location.\n");
         }
     }
-    if (only_upload == true) {
-    
-    }
-    if (only_download == true) {
-    
-    }
-    if (get_best_server == true) {
-    
-    }
+    if (get_best_server == true && !all_automated) {
+        printf("Getting user's geolocation...");
+        response = get_geo_response(curl, &response);
+        if (response.size != 0) {
+            printf(" OK.\n");
+            cJSON *country = cJSON_Parse(response.string);
+            char *country_name = cJSON_GetObjectItem(country, "country")->valuestring;
+            char *country_code = cJSON_GetObjectItem(country, "countryCode")->valuestring;
+            cJSON *by_location_servers = cJSON_CreateArray();
+            printf("Checking available servers by location...");
+            check_servers_by_location(country_name, country_code, &by_location_servers, root);
+            if (cJSON_GetArraySize(by_location_servers) != 0) {
+                printf(" OK\n");
+                for (int i = 0; i<cJSON_GetArraySize(by_location_servers); i++) {
+                    printf("%4d. %s\n", i+1, cJSON_GetArrayItem(by_location_servers, i)->valuestring);
+                }
+                float best_latency = 9999;
+                char *best_server_name = "";
+                printf("Checking for the best latency...\n");
+                check_servers_latency(curl, &best_latency, by_location_servers, &best_server_name);
+                if (best_latency != 9999) {
+                    printf("RESULTS\n----------\nBest server: %s\n", best_server_name);     
+                }
+                else {
+                    printf("RESULTS\n----------\nFailed to get best server. Unable to continue.\n");     
+                }
+            }
+            else {
+                printf("RESULTS\n----------\nFailed to get available servers from geo location. Unable to continue.\n");        
+            }
+            cJSON_Delete(by_location_servers);
+            cJSON_Delete(country);
 
+        }
+        else {
+            printf("RESULTS\n----------\nFailed to get user geo location. Unable to continue.\n");
+        }
+    }
+    if (only_upload == true && !all_automated) {
+    
+    }
+    if (only_download == true && !all_automated) {
+    
+    }
+    
     if (strlen(only_upload_host) != 0) {
         free(only_upload_host);
     }
@@ -176,12 +215,6 @@ int main(int argc, char *argv[]){
     curl_easy_cleanup(curl);
     return 0;
     int result;
-    for (int i=0; i<num_of_objects; i++) {
-        server = cJSON_GetArrayItem(root, i);
-        cJSON_AddItemToObject(server, "download_speed", cJSON_CreateNumber(0));
-        cJSON_AddItemToObject(server, "upload_speed", cJSON_CreateNumber(0));
-        cJSON_AddItemToObject(server, "temp_host_name", cJSON_CreateString(cJSON_GetObjectItem(server, "host")->valuestring));
-    }
     for (int i=0; i<num_of_objects; i++) {
         server = cJSON_GetArrayItem(root, i);
         printf("Testing [%04d/%d]: %50s",i+1, num_of_objects+1, cJSON_GetObjectItem(server, "host")->valuestring);
@@ -248,6 +281,46 @@ Response get_geo_response(CURL *curl, Response *response){
     return *response;
 }
 
+void check_servers_by_location(char *country_name, char *country_code, cJSON **allowed_servers, cJSON *root){
+    for (int i=0; i<cJSON_GetArraySize(root); i++) {
+       if (strcmp(cJSON_GetObjectItem(cJSON_GetArrayItem(root, i), "country")->valuestring, country_name) == 0 || (strcmp(cJSON_GetObjectItem(cJSON_GetArrayItem(root, i), "country")->valuestring, country_code)) == 0) {
+
+           cJSON_AddItemToArray(*allowed_servers, cJSON_CreateString(cJSON_GetObjectItem(cJSON_GetArrayItem(root, i), "host")->valuestring));
+        
+        } 
+    }
+}
+
+void check_servers_latency(CURL *curl, float *best_latency, cJSON *by_location_servers, char **best_server_name){
+    int result;
+    for (int i=0; i<cJSON_GetArraySize(by_location_servers); i++) {
+        printf("Testing [%04d/%d]: %50s",i+1, cJSON_GetArraySize(by_location_servers), cJSON_GetArrayItem(by_location_servers, i)->valuestring);
+
+        curl_easy_setopt(curl, CURLOPT_URL, cJSON_GetArrayItem(by_location_servers, i)->valuestring);
+        curl_easy_setopt(curl, CURLOPT_WRITEFUNCTION, dummy_write);
+        curl_easy_setopt(curl, CURLOPT_TIMEOUT, 15L);
+        curl_easy_setopt(curl, CURLOPT_NOBODY, 1L);
+        curl_easy_setopt(curl, CURLOPT_USERAGENT, "C server speed test");
+        result = curl_easy_perform(curl);
+        if (result != CURLE_OK) {
+            printf("%s (%s)\n", "...ERROR.", curl_easy_strerror(result));
+        }
+        else {
+            double connect_time;
+            printf("%s", "...OK");
+            result = curl_easy_getinfo(curl, CURLINFO_CONNECT_TIME, &connect_time);
+            if (result == CURLE_OK) {
+                printf(" (Connect time: %.6f)\n", connect_time);
+            }
+            if (connect_time < *best_latency) {
+                *best_latency = connect_time;
+                *best_server_name = cJSON_GetArrayItem(by_location_servers, i)->valuestring;
+            }
+        }
+ 
+    }
+}
+
 void print_help(){
     printf("Usage: ./speed_test [OPTIONS]\n");
     printf("Options:\n");
@@ -255,7 +328,7 @@ void print_help(){
     printf("\t-u <host>\tDo an upload speed test for inputted host\n");
     printf("\t-b\t\tGet the best server by location\n");
     printf("\t-l\t\tFind the user location\n");
-    printf("\t-a\t\tDo the full automated test\n");
+    printf("\t-a\t\tDo the full automated test (Note: ignores -b -d -u and -l options)\n");
     printf("\t-h\t\tPrint this help message\n");
 
 }
