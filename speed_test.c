@@ -13,7 +13,7 @@
 #include <stdbool.h>
 #include <unistd.h>
 #define IP_GEO_API "http://ip-api.com/json/"
-#define UPLOAD_SIZE (70 * 1024 * 1024)
+#define UPLOAD_SIZE (700 * 1024 * 1024)
 typedef struct{
     char *string;
     size_t size;
@@ -45,8 +45,7 @@ int main(int argc, char *argv[]){
     char *file_buffer;
     long file_length;
 
-    FILE *file = fopen("example_speedtest_server_list.json", "rb");
-
+    FILE *file = fopen("speedtest_server_list.json", "rb");
     if (file) {
         fseek(file, 0, SEEK_END);
         file_length = ftell(file);
@@ -177,13 +176,16 @@ int main(int argc, char *argv[]){
                     curl_off_t upload_speed = 5;
                     curl_easy_reset(curl);
                     download_speed = get_download_speed_from_server(curl, best_server_name);
-                    upload_speed = get_upload_speed_from_server(best_server_name, curl);
+                    CURL *temp_curl;
+                    temp_curl = curl_easy_init();
+                    upload_speed = get_upload_speed_from_server(best_server_name, temp_curl);
                     if (download_speed < 0 || upload_speed < 0) {
                         printf("RESULTS\n----------\nFailed to get download/upload speeds. Unable to continue.\n");     
                     }
                     else {
                         printf("RESULTS\n----------\nDownload speed: %f Mb/s\nUpload speed: %f Mb/s\nServer name for speed test: %s\nUser location: %s\n\n", ((download_speed * 8.0) / 1000000.0), ((upload_speed * 8.0) / 1000000.0), best_server_name, country_name); 
                     }
+                    curl_easy_cleanup(temp_curl);
                 }
                 else {
                     printf("RESULTS\n----------\nFailed to get best server. Unable to continue.\n");     
@@ -193,7 +195,6 @@ int main(int argc, char *argv[]){
                 printf("RESULTS\n----------\nFailed to get available servers from geo location. Unable to continue.\n");        
             }
             cJSON_Delete(by_location_servers);
-            //cJSON_Delete(country);
 
         }
         else {
@@ -313,6 +314,7 @@ int main(int argc, char *argv[]){
     if (strlen(only_download_host) != 0) {
         free(only_download_host);
     }
+    cJSON_Delete(root);
     free(response.string);
     curl_easy_cleanup(curl);
 
@@ -482,7 +484,7 @@ void print_help(){
     printf("Options:\n");
     printf("\t-d <host>\tDo a download speed test for inputted host\n");
     printf("\t-u <host>\tDo an upload speed test for inputted host\n");
-    printf("\t-b\t\tGet the best server by location\n");
+    printf("\t-b\t\tGet the best server by user location\n");
     printf("\t-l\t\tFind the user location\n");
     printf("\t-a\t\tDo the full automated test (Note: ignores -b -d -u and -l options)\n");
     printf("\t-h\t\tPrint this help message\n");
